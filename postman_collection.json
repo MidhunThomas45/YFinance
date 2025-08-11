@@ -1,0 +1,247 @@
+{
+  "info": {
+    "name": "iMarketPredict Stock API",
+    "description": "Complete Postman collection for testing the iMarketPredict Stock API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Core Endpoints",
+      "item": [
+        {
+          "name": "Get API Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            },
+            "description": "Get API information and available endpoints"
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check API health and database status"
+          }
+        },
+        {
+          "name": "Get Available Symbols",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/symbols",
+              "host": ["{{base_url}}"],
+              "path": ["symbols"]
+            },
+            "description": "Get list of available symbols from database"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stock Data",
+      "item": [
+        {
+          "name": "Get Stock History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stock/{{symbol}}/history?period={{period}}&interval={{interval}}&limit={{limit}}&store={{store}}",
+              "host": ["{{base_url}}"],
+              "path": ["stock", "{{symbol}}", "history"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "{{period}}",
+                  "description": "Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 5y, 10y, max"
+                },
+                {
+                  "key": "interval",
+                  "value": "{{interval}}",
+                  "description": "Data interval: 1m, 2m, 5m, 15m, 1h, 1d"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}",
+                  "description": "Maximum number of records to return"
+                },
+                {
+                  "key": "store",
+                  "value": "{{store}}",
+                  "description": "Whether to store data in database"
+                }
+              ]
+            },
+            "description": "Get historical OHLCV data for a symbol"
+          }
+        },
+        {
+          "name": "Get Latest Data",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stock/{{symbol}}/latest?store={{store}}",
+              "host": ["{{base_url}}"],
+              "path": ["stock", "{{symbol}}", "latest"],
+              "query": [
+                {
+                  "key": "store",
+                  "value": "{{store}}",
+                  "description": "Whether to store data in database"
+                }
+              ]
+            },
+            "description": "Get latest real-time data for a symbol"
+          }
+        },
+        {
+          "name": "Get Company Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stock/{{symbol}}/info",
+              "host": ["{{base_url}}"],
+              "path": ["stock", "{{symbol}}", "info"]
+            },
+            "description": "Get company information for a symbol"
+          }
+        },
+        {
+          "name": "Get From Database",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stock/{{symbol}}/db?limit={{limit}}",
+              "host": ["{{base_url}}"],
+              "path": ["stock", "{{symbol}}", "db"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "{{limit}}",
+                  "description": "Maximum number of records to return"
+                }
+              ]
+            },
+            "description": "Get stored data from database for a symbol"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Utility Endpoints",
+      "item": [
+        {
+          "name": "Trigger Manual Fetch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbols\": [\"AAPL\", \"MSFT\", \"GOOGL\"],\n  \"period\": \"5d\",\n  \"interval\": \"1h\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trigger/fetch?period={{period}}&interval={{interval}}",
+              "host": ["{{base_url}}"],
+              "path": ["trigger", "fetch"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "{{period}}",
+                  "description": "Time period for data fetch"
+                },
+                {
+                  "key": "interval",
+                  "value": "{{interval}}",
+                  "description": "Data interval for fetch"
+                }
+              ]
+            },
+            "description": "Trigger manual data fetch for specified symbols"
+          }
+        },
+        {
+          "name": "Batch History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/batch/{{symbols}}/history?period={{period}}&interval={{interval}}",
+              "host": ["{{base_url}}"],
+              "path": ["batch", "{{symbols}}", "history"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "{{period}}",
+                  "description": "Time period"
+                },
+                {
+                  "key": "interval",
+                  "value": "{{interval}}",
+                  "description": "Data interval"
+                }
+              ]
+            },
+            "description": "Get historical data for multiple symbols (comma-separated)"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "symbol",
+      "value": "AAPL",
+      "type": "string"
+    },
+    {
+      "key": "symbols",
+      "value": "AAPL,MSFT,GOOGL",
+      "type": "string"
+    },
+    {
+      "key": "period",
+      "value": "1y",
+      "type": "string"
+    },
+    {
+      "key": "interval",
+      "value": "1d",
+      "type": "string"
+    },
+    {
+      "key": "limit",
+      "value": "100",
+      "type": "string"
+    },
+    {
+      "key": "store",
+      "value": "true",
+      "type": "string"
+    }
+  ]
+}
