@@ -1,15 +1,14 @@
 # iMarketPredict Stock API
 
-A FastAPI-based REST API for fetching real-time and historical stock data from Yahoo Finance using company ticker symbols.
+A FastAPI-based REST API for fetching real-time and historical stock data from Yahoo Finance using company ticker symbols. **No database required - all data is fetched directly from Yahoo Finance.**
 
 ## Features
 
 - **Real-time Data**: Get latest stock prices and OHLCV data
 - **Historical Data**: Fetch historical data with customizable periods and intervals
 - **Company Information**: Retrieve company details, sector, market cap, etc.
-- **Database Storage**: Store and query historical data locally
 - **Batch Operations**: Fetch data for multiple symbols simultaneously
-- **Scheduled Updates**: Automatic daily data updates
+- **No Database**: Works without any database setup or configuration
 - **RESTful API**: Clean, documented endpoints for easy integration
 
 ## API Endpoints
@@ -19,8 +18,8 @@ A FastAPI-based REST API for fetching real-time and historical stock data from Y
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/` | API information and available endpoints |
-| `GET` | `/health` | Health check and database status |
-| `GET` | `/symbols` | List of available symbols in database |
+| `GET` | `/health` | Health check and API status |
+| `GET` | `/symbols/suggested` | List of suggested popular stock symbols |
 
 ### Stock Data Endpoints
 
@@ -29,13 +28,11 @@ A FastAPI-based REST API for fetching real-time and historical stock data from Y
 | `GET` | `/stock/{symbol}/history` | Historical OHLCV data |
 | `GET` | `/stock/{symbol}/latest` | Latest real-time data |
 | `GET` | `/stock/{symbol}/info` | Company information |
-| `GET` | `/stock/{symbol}/db` | Stored data from database |
 
 ### Utility Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/trigger/fetch` | Manually trigger data fetch |
 | `GET` | `/batch/{symbols}/history` | Batch historical data for multiple symbols |
 
 ## Setup Instructions
@@ -43,7 +40,6 @@ A FastAPI-based REST API for fetching real-time and historical stock data from Y
 ### 1. Prerequisites
 
 - Python 3.8+
-- MySQL/MariaDB database
 - Virtual environment (recommended)
 
 ### 2. Installation
@@ -66,65 +62,17 @@ source myvenv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Database Setup
-
-```sql
--- Create database
-CREATE DATABASE stock_data CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- Create user (optional)
-CREATE USER 'stock_user'@'localhost' IDENTIFIED BY 'your_password';
-GRANT ALL PRIVILEGES ON stock_data.* TO 'stock_user'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-### 4. Configuration
-
-This project reads settings directly from OS environment variables via `os.getenv(...)`. It does not automatically load a `.env` file.
-
-- Required: set `DATABASE_URL` or keep the default in `config.py` (`mysql://root:password@localhost:3306/stock_data`).
-- Optional: `API_HOST`, `API_PORT`, `YF_TIMEOUT`, `YF_RETRIES`.
-
-Windows PowerShell examples:
-
-```powershell
-$env:DATABASE_URL="mysql://root:password@localhost:3306/stock_data"
-$env:API_HOST="0.0.0.0"
-$env:API_PORT="8000"
-```
-
-Alternative (pure-Python) DBAPI using PyMySQL:
+### 3. Run the Application
 
 ```bash
-pip install pymysql
-```
-
-Then set (Windows PowerShell):
-
-```powershell
-$env:DATABASE_URL="mysql+pymysql://root:password@localhost:3306/stock_data"
-```
-
-### 5. Run the Application
-
-```bash
-# Easiest (includes preflight checks)
-python start.py
-
-# Or run the app module directly
+# Start the API server
 python main.py
 
-# Or use uvicorn
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Or use the startup script
+python start_api.py
 ```
 
-The API will be available at `http://localhost:8000`.
-
-Note: If you do not have a database configured, the API can still serve data from Yahoo Finance. Use `store=false` on endpoints to skip DB writes, e.g.:
-
-```
-GET /stock/AAPL/history?period=1y&interval=1d&store=false
-```
+The API will be available at `http://localhost:8000`
 
 ## Usage Examples
 
@@ -157,15 +105,6 @@ curl "http://localhost:8000/stock/GOOGL/info"
 ```bash
 # Get data for multiple symbols
 curl "http://localhost:8000/batch/AAPL,MSFT,GOOGL/history?period=1d&interval=1h"
-```
-
-### 5. Trigger Manual Fetch
-
-```bash
-# Trigger data fetch for specific symbols
-curl -X POST "http://localhost:8000/trigger/fetch" \
-     -H "Content-Type: application/json" \
-     -d '{"symbols": ["AAPL", "MSFT"], "period": "5d", "interval": "1h"}'
 ```
 
 ## Postman Collection
@@ -268,34 +207,33 @@ The API includes comprehensive error handling:
 The application logs all operations to help with debugging:
 
 - API requests and responses
-- Database operations
 - Yahoo Finance API calls
 - Error details and stack traces
 
 ## Performance Considerations
 
-- Data is cached in the database for faster subsequent requests
+- All data is fetched directly from Yahoo Finance in real-time
+- No local caching or storage
 - Batch operations are optimized for multiple symbols
-- Database indexes are created on frequently queried fields
-- Connection pooling is used for database operations
+- Rate limiting is handled by Yahoo Finance
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Database Connection Failed**
-   - Check the `DATABASE_URL` environment variable or update the default in `config.py`
-   - Ensure MySQL service is running
-   - Verify database exists and user has permissions
-
-2. **No Data Returned**
+1. **No Data Returned**
    - Verify ticker symbol is correct
    - Check if market is open (real-time data only available during trading hours)
    - Ensure internet connection is stable
 
-3. **Rate Limiting**
+2. **Rate Limiting**
    - Yahoo Finance may limit requests for very frequent calls
-   - Use the database storage feature to reduce API calls
+   - Wait a few seconds between requests
+
+3. **API Not Starting**
+   - Check if port 8000 is available
+   - Verify all dependencies are installed: `pip install -r requirements.txt`
+   - Check Python version (3.8+ required)
 
 ### Debug Mode
 
@@ -323,3 +261,6 @@ For issues and questions:
 - Check the logs for error details
 - Verify your configuration
 - Ensure all dependencies are installed correctly
+
+
+#python start_api.py
