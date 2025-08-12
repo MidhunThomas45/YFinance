@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from services.stock_service import (
     fetch_historical_ohlcv, 
@@ -7,13 +7,12 @@ from services.stock_service import (
     fetch_multiple_symbols,
     get_symbol_info
 )
-from services.storage_service import upsert_ohlcv_from_df, query_ohlcv, get_symbols_from_db
-from jobs.fetch_jobs import start_scheduler, job_fetch_and_store
-from db import create_tables, check_db_connection
 from typing import Optional, List
 import uvicorn
 import logging
 from datetime import datetime
+import os
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="iMarketPredict Stock API",
-    description="API for fetching real-time and historical stock data from Yahoo Finance",
+    description="API for fetching real-time and historical stock data from Yahoo Finance - No Database Required",
     version="1.0.0"
 )
 
@@ -39,28 +38,16 @@ DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NVDA", "NFL
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database and start scheduler on app startup"""
+    """Initialize API on startup"""
     try:
-        # Check database connection
-        if check_db_connection():
-            logger.info("Database connection successful")
-            # Create tables if they don't exist
-            create_tables()
-            
-            # Run initial data fetch
-            try:
-                job_fetch_and_store(DEFAULT_TICKERS, period="5d", interval="1h")
-                logger.info("Initial data fetch completed")
-            except Exception as e:
-                logger.warning(f"Initial data fetch failed: {e}")
-            
-            # Start scheduler for daily updates
-            start_scheduler(DEFAULT_TICKERS, cron_expr={"hour": 1, "minute": 0})
-            logger.info("Scheduler started successfully")
-        else:
-            logger.error("Database connection failed - some features may not work")
+        logger.info("Starting iMarketPredict Stock API...")
+        logger.info("Database features disabled - running in read-only mode")
+        logger.info("All data is fetched directly from Yahoo Finance")
+        logger.info("API startup completed successfully")
+        
     except Exception as e:
         logger.error(f"Startup error: {e}")
+        logger.info("API will continue to run but some features may be limited")
 
 @app.get("/")
 def root():
@@ -69,49 +56,34 @@ def root():
         "message": "iMarketPredict Stock API",
         "version": "1.0.0",
         "status": "running",
+        "database": "disabled",
         "timestamp": datetime.now().isoformat(),
         "endpoints": {
             "health": "/health",
-            "symbols": "/symbols",
             "stock_history": "/stock/{symbol}/history",
             "stock_latest": "/stock/{symbol}/latest",
             "stock_info": "/stock/{symbol}/info",
-            "stock_db": "/stock/{symbol}/db",
-            "trigger_fetch": "/trigger/fetch"
-        }
+            "batch_history": "/batch/{symbols}/history"
+        },
+        "note": "This API fetches data directly from Yahoo Finance - no database storage"
     }
 
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
-    db_status = check_db_connection()
     return {
-        "status": "healthy" if db_status else "degraded",
-        "database": "connected" if db_status else "disconnected",
-        "timestamp": datetime.now().isoformat()
+        "status": "healthy",
+        "database": "disabled",
+        "timestamp": datetime.now().isoformat(),
+        "message": "API is running successfully - fetching data from Yahoo Finance"
     }
-
-@app.get("/symbols")
-def get_available_symbols():
-    """Get list of available symbols from database"""
-    try:
-        symbols = get_symbols_from_db()
-        return {
-            "symbols": symbols,
-            "count": len(symbols),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting symbols: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve symbols")
 
 @app.get("/stock/{symbol}/history")
 def get_history(
     symbol: str, 
-    period: str = Query("1y", description="Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 5y, 10y, max"),
+    period: str = Query("1d", description="Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 5y, 10y, max"),
     interval: str = Query("1d", description="Data interval: 1m, 2m, 5m, 15m, 1h, 1d"),
-    limit: Optional[int] = Query(1000, description="Maximum number of records to return"),
-    store: bool = Query(True, description="Whether to store data in database")
+    limit: Optional[int] = Query(1000, description="Maximum number of records to return")
 ):
     """Get historical OHLCV data for a symbol"""
     try:
@@ -121,15 +93,7 @@ def get_history(
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No data found for symbol {symbol}")
         
-        # Store in database if requested
-        if store:
-            try:
-                rows_inserted = upsert_ohlcv_from_df(df)
-                logger.info(f"Stored {rows_inserted} rows for {symbol}")
-            except Exception as e:
-                logger.warning(f"Failed to store data for {symbol}: {e}")
-        
-        # Return data
+        # Return data directly from Yahoo Finance
         data = df.to_dict(orient="records")
         return {
             "symbol": symbol.upper(),
@@ -137,7 +101,9 @@ def get_history(
             "interval": interval,
             "total_records": len(data),
             "rows": data[-limit:] if limit else data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "source": "Yahoo Finance",
+            "stored": False
         }
         
     except HTTPException:
@@ -147,7 +113,7 @@ def get_history(
         raise HTTPException(status_code=500, detail=f"Failed to fetch data for {symbol}")
 
 @app.get("/stock/{symbol}/latest")
-def get_latest(symbol: str, store: bool = Query(True, description="Whether to store data in database")):
+def get_latest(symbol: str):
     """Get latest real-time data for a symbol"""
     try:
         logger.info(f"Fetching latest data for {symbol}")
@@ -156,26 +122,11 @@ def get_latest(symbol: str, store: bool = Query(True, description="Whether to st
         if not latest:
             raise HTTPException(status_code=404, detail=f"No real-time data found for symbol {symbol}")
         
-        # Store in database if requested
-        if store:
-            try:
-                import pandas as pd
-                df = pd.DataFrame([{
-                    "symbol": latest['symbol'],
-                    "dt": pd.to_datetime(latest['dt']),
-                    "open": latest['open'],
-                    "high": latest['high'],
-                    "low": latest['low'],
-                    "close": latest['close'],
-                    "volume": latest['volume']
-                }])
-                upsert_ohlcv_from_df(df)
-            except Exception as e:
-                logger.warning(f"Failed to store latest data for {symbol}: {e}")
-        
         return {
             **latest,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "source": "Yahoo Finance",
+            "stored": False
         }
         
     except HTTPException:
@@ -196,7 +147,8 @@ def get_stock_info(symbol: str):
         
         return {
             **info,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "source": "Yahoo Finance"
         }
         
     except HTTPException:
@@ -204,65 +156,6 @@ def get_stock_info(symbol: str):
     except Exception as e:
         logger.error(f"Error fetching company info for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch company information for {symbol}")
-
-@app.get("/stock/{symbol}/db")
-def get_from_db(
-    symbol: str, 
-    limit: int = Query(100, description="Maximum number of records to return")
-):
-    """Get stored data from database for a symbol"""
-    try:
-        rows = query_ohlcv(symbol, limit=limit)
-        if not rows:
-            raise HTTPException(status_code=404, detail=f"No stored data found for symbol {symbol}")
-        
-        return {
-            "symbol": symbol.upper(),
-            "total_records": len(rows),
-            "rows": rows,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error querying database for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to query database for {symbol}")
-
-@app.post("/trigger/fetch")
-def trigger_fetch(
-    symbols: List[str], 
-    period: str = Query("5d", description="Time period for data fetch"),
-    interval: str = Query("1h", description="Data interval for fetch")
-):
-    """Trigger manual data fetch for specified symbols"""
-    try:
-        logger.info(f"Triggering fetch for symbols: {symbols}")
-        
-        if not symbols:
-            raise HTTPException(status_code=400, detail="At least one symbol must be provided")
-        
-        # Validate symbols
-        valid_symbols = [s.upper().strip() for s in symbols if s.strip()]
-        if not valid_symbols:
-            raise HTTPException(status_code=400, detail="No valid symbols provided")
-        
-        # Start fetch job
-        job_fetch_and_store(valid_symbols, period=period, interval=interval)
-        
-        return {
-            "status": "started",
-            "symbols": valid_symbols,
-            "period": period,
-            "interval": interval,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error triggering fetch: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to trigger fetch: {str(e)}")
 
 @app.get("/batch/{symbols}/history")
 def get_batch_history(
@@ -296,7 +189,8 @@ def get_batch_history(
             "period": period,
             "interval": interval,
             "data": response_data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "source": "Yahoo Finance"
         }
         
     except HTTPException:
@@ -305,11 +199,75 @@ def get_batch_history(
         logger.error(f"Error in batch history fetch: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch batch data: {str(e)}")
 
+@app.get("/symbols/suggested")
+def get_suggested_symbols():
+    """Get list of suggested popular stock symbols"""
+    return {
+        "suggested_symbols": DEFAULT_TICKERS,
+        "count": len(DEFAULT_TICKERS),
+        "timestamp": datetime.now().isoformat(),
+        "note": "These are popular stock symbols you can test with"
+    }
+
+@app.get("/test")
+def test_endpoint():
+    """Simple test endpoint"""
+    return {
+        "message": "API is working!",
+        "timestamp": datetime.now().isoformat(),
+        "status": "success"
+    }
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True,
-        log_level="info"
-    )
+    print("=" * 60)
+    print("Starting iMarketPredict Stock API (No Database)")
+    print("=" * 60)
+    print("This API fetches data directly from Yahoo Finance")
+    print("No database storage - all data is real-time")
+    print("=" * 60)
+    print("API will be available at: http://localhost:8000")
+    print("Test endpoints:")
+    print("  - http://localhost:8000/test")
+    print("  - http://localhost:8000/health")
+    print("  - http://localhost:8000/stock/AAPL/latest")
+    print("  - http://localhost:8000/stock/AAPL/history")
+    print("  - http://localhost:8000/batch/AAPL,MSFT,GOOGL/history")
+    print("=" * 60)
+    print("Press Ctrl+C to stop the server")
+    print("=" * 60)
+    
+    # Check if running on Windows and disable reload if needed
+    is_windows = os.name == 'nt'
+    
+    try:
+        if is_windows:
+            print("Running on Windows - disabling reload feature for stability")
+            uvicorn.run(
+                "main:app", 
+                host="0.0.0.0", 
+                port=8000,  # Back to original port 8000
+                reload=False,  # Disable reload on Windows
+                log_level="info"
+            )
+        else:
+            uvicorn.run(
+                "main:app", 
+                host="0.0.0.0", 
+                port=8000,  # Back to original port 8000
+                reload=True,
+                log_level="info"
+            )
+    except Exception as e:
+        print(f"Error starting server: {e}")
+        print("Trying without reload feature...")
+        try:
+            uvicorn.run(
+                "main:app", 
+                host="0.0.0.0", 
+                port=8000,  # Back to original port 8000
+                reload=False,
+                log_level="info"
+            )
+        except Exception as e2:
+            print(f"Failed to start server: {e2}")
+            print("Please check if port 8000 is available and try again.")

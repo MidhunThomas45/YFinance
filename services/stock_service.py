@@ -20,48 +20,98 @@ def fetch_historical_ohlcv(symbol: str, period: str = "1y", interval: str = "1d"
         
         # Download data with retry logic
         max_retries = 3
+        df = pd.DataFrame()
+        
         for attempt in range(max_retries):
             try:
-                df = yf.download(
-                    symbol, 
-                    period=period, 
-                    interval=interval, 
-                    auto_adjust=False, 
-                    progress=False,
-                    timeout=30
-                )
-                break
+                logger.info(f"Attempt {attempt + 1} for {symbol}")
+                
+                # Try different approaches if the first fails
+                if attempt == 0:
+                    # First attempt: standard download
+                    df = yf.download(
+                        symbol, 
+                        period=period, 
+                        interval=interval, 
+                        auto_adjust=False, 
+                        progress=False,
+                        timeout=30
+                    )
+                elif attempt == 1:
+                    # Second attempt: try with auto_adjust=True
+                    logger.info(f"Retrying {symbol} with auto_adjust=True")
+                    df = yf.download(
+                        symbol, 
+                        period=period, 
+                        interval=interval, 
+                        auto_adjust=True, 
+                        progress=False,
+                        timeout=30
+                    )
+                elif attempt == 2:
+                    # Third attempt: try with different period if 1y fails
+                    if period == "1y":
+                        logger.info(f"Retrying {symbol} with period=5d")
+                        df = yf.download(
+                            symbol, 
+                            period="5d", 
+                            interval=interval, 
+                            auto_adjust=False, 
+                            progress=False,
+                            timeout=30
+                        )
+                    else:
+                        # Try with 1d period
+                        logger.info(f"Retrying {symbol} with period=1d")
+                        df = yf.download(
+                            symbol, 
+                            period="1d", 
+                            interval=interval, 
+                            auto_adjust=False, 
+                            progress=False,
+                            timeout=30
+                        )
+                
+                if not df.empty:
+                    logger.info(f"Success on attempt {attempt + 1} for {symbol}")
+                    break
+                    
             except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"Failed to fetch data for {symbol} after {max_retries} attempts: {e}")
-                    return pd.DataFrame()
-                logger.warning(f"Attempt {attempt + 1} failed for {symbol}, retrying...")
-                time.sleep(2 ** attempt)  # Exponential backoff
+                logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    logger.error(f"All attempts failed for {symbol}")
         
         if df.empty:
-            logger.warning(f"No data returned for {symbol}")
+            logger.warning(f"No data returned for {symbol} after all attempts")
             return pd.DataFrame()
         
         # Keep needed columns and reset index
-        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].reset_index()
-        df.columns = ['dt', 'open', 'high', 'low', 'close', 'volume']
-        df['symbol'] = symbol.upper()
-        
-        # Clean data - remove rows with NaN values
-        df = df.dropna()
-        
-        # Ensure proper data types
-        df['open'] = pd.to_numeric(df['open'], errors='coerce')
-        df['high'] = pd.to_numeric(df['high'], errors='coerce')
-        df['low'] = pd.to_numeric(df['low'], errors='coerce')
-        df['close'] = pd.to_numeric(df['close'], errors='coerce')
-        df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
-        
-        # Remove any remaining NaN rows
-        df = df.dropna()
-        
-        logger.info(f"Successfully fetched {len(df)} records for {symbol}")
-        return df[['symbol', 'dt', 'open', 'high', 'low', 'close', 'volume']]
+        try:
+            df = df[['Open', 'High', 'Low', 'Close', 'Volume']].reset_index()
+            df.columns = ['dt', 'open', 'high', 'low', 'close', 'volume']
+            df['symbol'] = symbol.upper()
+            
+            # Clean data - remove rows with NaN values
+            df = df.dropna()
+            
+            # Ensure proper data types
+            df['open'] = pd.to_numeric(df['open'], errors='coerce')
+            df['high'] = pd.to_numeric(df['high'], errors='coerce')
+            df['low'] = pd.to_numeric(df['low'], errors='coerce')
+            df['close'] = pd.to_numeric(df['close'], errors='coerce')
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+            
+            # Remove any remaining NaN rows
+            df = df.dropna()
+            
+            logger.info(f"Successfully fetched {len(df)} records for {symbol} from Yahoo Finance")
+            return df[['symbol', 'dt', 'open', 'high', 'low', 'close', 'volume']]
+            
+        except Exception as e:
+            logger.error(f"Error processing data for {symbol}: {e}")
+            return pd.DataFrame()
         
     except Exception as e:
         logger.error(f"Error fetching historical data for {symbol}: {e}")
@@ -72,6 +122,9 @@ def fetch_realtime_latest(symbol: str, period: str = "1d", interval: str = "1m")
     Get the latest available minute candle for today (near real-time).
     """
     try:
+        logger.info(f"Fetching real-time data for {symbol}")
+        
+        # Try to get the latest data
         df = fetch_historical_ohlcv(symbol, period=period, interval=interval)
         if df.empty:
             logger.warning(f"No real-time data available for {symbol}")
@@ -80,8 +133,12 @@ def fetch_realtime_latest(symbol: str, period: str = "1d", interval: str = "1m")
         latest = df.tail(1).iloc[0]
         
         # Get additional info from yfinance
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+        except Exception as e:
+            logger.warning(f"Could not fetch ticker info for {symbol}: {e}")
+            info = {}
         
         result = {
             "symbol": latest['symbol'],
@@ -99,7 +156,7 @@ def fetch_realtime_latest(symbol: str, period: str = "1d", interval: str = "1m")
             "fetch_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
-        logger.info(f"Successfully fetched real-time data for {symbol}")
+        logger.info(f"Successfully fetched real-time data for {symbol} from Yahoo Finance")
         return result
         
     except Exception as e:
@@ -128,10 +185,11 @@ def get_symbol_info(symbol: str) -> Dict[str, Any]:
     Get basic information about a symbol.
     """
     try:
+        logger.info(f"Fetching symbol info for {symbol}")
         ticker = yf.Ticker(symbol)
         info = ticker.info
         
-        return {
+        result = {
             "symbol": symbol.upper(),
             "company_name": info.get('longName', ''),
             "sector": info.get('sector', ''),
@@ -143,6 +201,10 @@ def get_symbol_info(symbol: str) -> Dict[str, Any]:
             "website": info.get('website', ''),
             "description": info.get('longBusinessSummary', '')
         }
+        
+        logger.info(f"Successfully fetched symbol info for {symbol}")
+        return result
+        
     except Exception as e:
         logger.error(f"Error fetching symbol info for {symbol}: {e}")
         return {}
